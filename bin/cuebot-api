@@ -1,0 +1,103 @@
+#!/usr/bin/env node
+
+// CUEBOT-API RUNNER
+// Copyright 2020 Jonathan Magaru <jonathan.magaru.code@gmail.com>
+// Licensed under the MIT license. See LICENSE.
+
+const { spawn } = require("child_process");
+
+const semver = require("semver");
+const path = require("path");
+const package = require(path.resolve(__dirname, "../package.json"));
+const colors = require("chalk");
+const Table = require("cli-table3");
+
+const program = require("commander");
+
+const fs = require("fs");
+
+const open = require("open");
+
+const util = require("util");
+const { exec } = require("child_process");
+const shell = require("shelljs");
+
+// Getting the current installed cuebot-api version
+let latestVersion = undefined;
+exec("npm show cuebot-api version", async (error, stdout, stderr) => {
+  latestVersion = stdout.replace(/\n/, "");
+});
+
+const createReports = () => {
+  let reportGeneratorPath = path.resolve(
+    __dirname,
+    "../lib/reports/report-generator.js"
+  );
+  let commandExec = `node "${reportGeneratorPath}"`;
+  shell.exec(commandExec, { silent: true }).stdout;
+};
+
+// Prompt if the current installed cuebot-mobile version is the latest version
+process.on("exit", () => {
+  if (latestVersion && semver.gt(latestVersion, package.version)) {
+    const version = `New version available: ${colors.green.bold.underline(
+      latestVersion
+    )}`;
+    const update = `Update now: ${colors.yellow.bold(
+      "npm install cuebot-api@latest"
+    )}.`;
+    let newVersionTable = new Table();
+    newVersionTable.push([version], [update]);
+    process.stdout.write("\n" + newVersionTable.toString() + "\n");
+  }
+});
+
+program
+  .version(package.version)
+  .option("-e, --exec", "Run Automated Test")
+  .option("-v, --ver", "Current CUEBOT-API version")
+  .option("-i, --init", "Generate initial sample scripts")
+  .option("-t, --tags [tags]", 'Use with --exec to specify which tags to run, example:"@testtags"')
+  .option("-c, --clean","Deletes existing reports and snapshots before running new test.")
+  .parse(process.argv);
+
+let clean = (folder) => {
+  if (fs.existsSync(folder)) {
+    fs.readdirSync(folder).forEach(function (item) {
+      const file = path.join(folder, item);
+      if (fs.lstatSync(file).isDirectory()) {
+        clean(file);
+      } else {
+        fs.unlinkSync(file);
+      }
+    });
+    fs.rmdirSync(folder);
+  }
+};
+
+if (program.clean) clean("reports");
+
+if (program.exec) {
+  require("./cuebot-api-client")
+    .default(program)
+    .then(
+      (code) => {
+        createReports();
+        process.exit(code);
+      },
+      () => {
+        createReports();
+        process.exit(1);
+      }
+    );
+} else if (program.init) {
+    require("./cuebot-api-init").default();
+} else if (program.ver) {
+  console.log(
+    `\nYou are currently using version :  ${colors.yellow.bold(
+      package.version
+    )}`
+  );
+} else {
+  program.outputHelp();
+}
